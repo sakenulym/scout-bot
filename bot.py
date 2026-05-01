@@ -23,8 +23,42 @@ db = Database()
 scheduler = AsyncIOScheduler(timezone=TIMEZONE)
 
 
-@dp.message(F.chat.id == int(SCOUT_GROUP_ID))
-async def handle_group_message(msg: Message):
+@dp.message(Command("test"))
+async def cmd_test(msg: Message):
+    await msg.answer(f"✅ Бот работает! Chat ID: {msg.chat.id}")
+
+
+@dp.message(Command("report"))
+async def cmd_report(msg: Message):
+    if str(msg.chat.id) != str(MANAGER_CHAT_ID):
+        return
+    text = build_daily_report(db, timeout_minutes=REPORT_TIMEOUT_MINUTES)
+    await msg.answer(text, parse_mode="HTML")
+
+
+@dp.message(Command("status"))
+async def cmd_status(msg: Message):
+    if str(msg.chat.id) != str(MANAGER_CHAT_ID):
+        return
+    alerts = check_missing_reports(db, timeout_minutes=REPORT_TIMEOUT_MINUTES)
+    rows = db.get_last_report_per_scout()
+    if not rows:
+        await msg.answer("📭 Сегодня отчётов ещё не было.")
+        return
+    silent_ids = {a["scout_id"] for a in alerts}
+    lines = ["📊 <b>Статус скаутов</b>\n"]
+    for row in rows:
+        ts = row["ts"][:16].replace("T", " ")
+        icon = "🔴" if row["scout_id"] in silent_ids else "🟢"
+        lines.append(f"{icon} <b>{row['scout_name']}</b>\n   Последний: {ts} | {row['report_type']} | {row['address']}")
+    await msg.answer("\n".join(lines), parse_mode="HTML")
+
+
+@dp.message()
+async def handle_any_message(msg: Message):
+    logger.info(f"Сообщение из чата {msg.chat.id} (группа скаутов: {SCOUT_GROUP_ID})")
+    if str(msg.chat.id) != str(SCOUT_GROUP_ID):
+        return
     text = msg.text or msg.caption or ""
     has_media = bool(msg.photo or msg.document)
     parsed = parse_report(text, has_media=has_media)
@@ -37,38 +71,7 @@ async def handle_group_message(msg: Message):
         report_type=parsed["type"], address=parsed["address"],
         scooter_count=parsed["scooters"], raw_text=text, timestamp=msg.date,
     )
-    logger.info(f"Отчёт: {scout_name} | {parsed['type']} | {parsed['address']} | {parsed['scooters']} шт")
-
-
-@dp.message(Command("report"))
-async def cmd_report(msg: Message):
-    """Ручной запрос итогового отчёта за сегодня — только из чата менеджеров."""
-    if str(msg.chat.id) != str(MANAGER_CHAT_ID):
-        return
-    text = build_daily_report(db, timeout_minutes=REPORT_TIMEOUT_MINUTES)
-    await msg.answer(text, parse_mode="HTML")
-
-
-@dp.message(Command("status"))
-async def cmd_status(msg: Message):
-    """Текущий статус всех скаутов — кто онлайн, кто молчит."""
-    if str(msg.chat.id) != str(MANAGER_CHAT_ID):
-        return
-    alerts = check_missing_reports(db, timeout_minutes=REPORT_TIMEOUT_MINUTES)
-    rows = db.get_last_report_per_scout()
-    if not rows:
-        await msg.answer("📭 Сегодня отчётов ещё не было.")
-        return
-    lines = ["📊 <b>Статус скаутов</b>\n"]
-    silent_ids = {a["scout_id"] for a in alerts}
-    for row in rows:
-        ts = row["ts"][:16].replace("T", " ")
-        icon = "🔴" if row["scout_id"] in silent_ids else "🟢"
-        lines.append(
-            f"{icon} <b>{row['scout_name']}</b>\n"
-            f"   Последний: {ts} | {row['report_type']} | {row['address']}"
-        )
-    await msg.answer("\n".join(lines), parse_mode="HTML")
+    logger.info(f"Отчёт сохранён: {scout_name} | {parsed['type']} | {parsed['address']}")
 
 
 async def job_check_reports():
@@ -76,21 +79,15 @@ async def job_check_reports():
     for alert in alerts:
         await bot.send_message(
             chat_id=MANAGER_CHAT_ID,
-            text=(
-                f"⚠️ <b>Нет отчёта</b>\n"
-                f"Скаут: <b>{alert['name']}</b>\n"
-                f"Последний отчёт: {alert['last_report']}\n"
-                f"Молчит уже: <b>{alert['silent_minutes']} мин</b>"
-            ),
+            text=f"⚠️ <b>Нет отчёта</b>\nСкаут: <b>{alert['name']}</b>\nПоследний: {alert['last_report']}\nМолчит: <b>{alert['silent_minutes']} мин</b>",
             parse_mode="HTML",
         )
 
 
 async def job_daily_report():
-    report_text = build_daily_report(db, timeout_minutes=REPORT_TIMEOUT_MINUTES)
-    await bot.send_message(chat_id=MANAGER_CHAT_ID, text=report_text, parse_mode="HTML")
+    text = build_daily_report(db, timeout_minutes=REPORT_TIMEOUT_MINUTES)
+    await bot.send_message(chat_id=MANAGER_CHAT_ID, text=text, parse_mode="HTML")
     db.close_day()
-    logger.info("Итоговый отчёт отправлен, день закрыт.")
 
 
 async def main():
