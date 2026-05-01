@@ -23,7 +23,11 @@ def _is_on_break(last_row) -> tuple[bool, str]:
         now = datetime.now(ALMATY_TZ)
         elapsed = (now - last_ts).total_seconds() / 60
         if elapsed < BREAK_DURATION_MINUTES:
-            return True, last_row.get("address", "обед")
+            try:
+                break_type = last_row["address"] or "обед"
+            except (IndexError, KeyError):
+                break_type = "обед"
+            return True, break_type
     return False, ""
 
 
