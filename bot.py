@@ -45,12 +45,21 @@ async def cmd_status(msg: Message):
     if not rows:
         await msg.answer("📭 Сегодня отчётов ещё не было.")
         return
+    from datetime import timezone, timedelta, datetime
+    ALMATY_TZ = timezone(timedelta(hours=5))
     silent_ids = {a["scout_id"] for a in alerts}
     lines = ["📊 <b>Статус скаутов</b>\n"]
     for row in rows:
-        ts = row["ts"][:16].replace("T", " ")
+        dt = datetime.fromisoformat(row["ts"])
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_almaty = dt.astimezone(ALMATY_TZ)
+        ts = dt_almaty.strftime("%Y-%m-%d %H:%M")
         icon = "🔴" if row["scout_id"] in silent_ids else "🟢"
-        lines.append(f"{icon} <b>{row['scout_name']}</b>\n   Последний: {ts} | {row['report_type']} | {row['address']}")
+        lines.append(
+            f"{icon} <b>{row['scout_name']}</b>\n"
+            f"   Последний: {ts} | {row['report_type']} | {row['address']}"
+        )
     await msg.answer("\n".join(lines), parse_mode="HTML")
 
 
