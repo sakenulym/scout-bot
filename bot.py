@@ -92,6 +92,22 @@ async def job_daily_report():
 
 async def main():
     db.init()
+
+    # Регистрируем команды только для чата менеджеров
+    from aiogram.types import BotCommand, BotCommandScopeChat
+    commands = [
+        BotCommand(command="status", description="Статус скаутов (кто активен/молчит)"),
+        BotCommand(command="report", description="Итоговый отчёт за сегодня"),
+        BotCommand(command="test", description="Проверить работу бота"),
+    ]
+    await bot.set_my_commands(
+        commands,
+        scope=BotCommandScopeChat(chat_id=int(MANAGER_CHAT_ID))
+    )
+    # Убираем команды из всех остальных чатов
+    from aiogram.types import BotCommandScopeDefault
+    await bot.delete_my_commands(scope=BotCommandScopeDefault())
+
     scheduler.add_job(job_check_reports, "interval", minutes=5, id="check_reports")
     scheduler.add_job(job_daily_report, CronTrigger(hour=DAY_END_HOUR, minute=DAY_END_MINUTE), id="daily_report")
     scheduler.start()
