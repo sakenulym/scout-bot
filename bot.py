@@ -62,7 +62,7 @@ async def cmd_status(msg: Message):
         if rtype == REPORT_TYPE_BREAK:
             elapsed = int((datetime.now(ALMATY_TZ) - dt_almaty).total_seconds() / 60)
             remaining = 60 - elapsed
-            addr = row.get("address", "обед")
+            addr = row["address"] or "обед"
             icon = "🍽"
             status = f"На {addr} (осталось ~{max(0, remaining)} мин)"
         elif row["scout_id"] in silent_ids:
